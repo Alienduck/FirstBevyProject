@@ -68,15 +68,24 @@ impl BallData {
     }
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Deref, DerefMut)]
 struct Velocity(Vec3);
+
+const GRAVITY: Vec3 = Vec3::new(0., -9.8, 0.);
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
         .insert_resource(Time::<Fixed>::from_hz(30.))
-        .add_systems(FixedUpdate, (apply_velocity))
+        .add_systems(
+            FixedUpdate,
+            (
+                apply_velocity,
+                apply_gravity.before(apply_velocity),
+                bounce.after(apply_velocity),
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -101,6 +110,21 @@ fn apply_grab(grab: On<GrabEvent>, mut cursor: Single<&mut CursorOptions, With<P
         CursorGrabMode::None
     };
     cursor.visible = !**grab;
+}
+
+fn apply_gravity(mut objects: Query<&mut Velocity>, time: Res<Time>) {
+    let g = GRAVITY * time.delta_secs();
+    for mut v in &mut objects {
+        **v += g;
+    }
+}
+
+fn bounce(mut balls: Query<(&Transform, &mut Velocity)>) {
+    for (transform, mut velocity) in &mut balls {
+        if transform.translation.y < 0. && velocity.y < 0. {
+            velocity.y *= -1.;
+        }
+    }
 }
 
 fn focus_event(mut commands: Commands, mut events: MessageReader<WindowFocused>) {
