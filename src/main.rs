@@ -27,6 +27,7 @@ impl Default for Player {
 struct BallSpawn {
     position: Vec3,
     velocity: Vec3,
+    power: f32,
 }
 
 #[derive(Resource)]
@@ -122,7 +123,7 @@ fn apply_gravity(mut objects: Query<&mut Velocity>, time: Res<Time>) {
 fn bounce(mut balls: Query<(&Transform, &mut Velocity)>) {
     for (transform, mut velocity) in &mut balls {
         if transform.translation.y < 0. && velocity.y < 0. {
-            velocity.y *= -1.;
+            velocity.y *= -0.7;
         }
     }
 }
@@ -152,7 +153,7 @@ fn spawn_ball(
             Transform::from_translation(spawn.position),
             Mesh3d(ball_data.mesh()),
             MeshMaterial3d(ball_data.material()),
-            Velocity(spawn.velocity),
+            Velocity(spawn.velocity * spawn.power * 10.),
         ));
     }
 }
@@ -162,17 +163,29 @@ fn shoot_ball(
     player: Single<&Transform, With<Player>>,
     mut spawner: MessageWriter<BallSpawn>,
     cursor: Single<&mut CursorOptions>,
+    mut power: Local<Option<f32>>,
+    time: Res<Time>,
 ) {
     if cursor.visible {
         return;
     }
-    if !input.just_pressed(MouseButton::Left) {
-        return;
+    if let Some(current) = power.as_mut() {
+        if input.just_released(MouseButton::Left) {
+            spawner.write(BallSpawn {
+                position: player.translation,
+                velocity: player.forward().as_vec3() * 15.,
+                power: *current,
+            });
+        }
+        if input.pressed(MouseButton::Left) {
+            *current += time.delta_secs();
+        } else {
+            *power = None
+        }
     }
-    spawner.write(BallSpawn {
-        position: player.translation,
-        velocity: player.forward().as_vec3() * 15.,
-    });
+    if !input.just_pressed(MouseButton::Left) {
+        *power = Some(0.2);
+    }
 }
 
 fn apply_velocity(mut objects: Query<(&mut Transform, &Velocity)>, time: Res<Time>) {
