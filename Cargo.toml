@@ -13,3 +13,6 @@ rustflags = ["-Zshare-generics=y"]
 
 [profile.dev.packages."*"]
 opt-level = 3
+
+[build]
+jobs = 4
