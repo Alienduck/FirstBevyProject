@@ -26,6 +26,7 @@ impl Default for Player {
 #[derive(Component, Message)]
 struct BallSpawn {
     position: Vec3,
+    velocity: Vec3,
 }
 
 #[derive(Resource)]
@@ -67,10 +68,15 @@ impl BallData {
     }
 }
 
+#[derive(Component, Default)]
+struct Velocity(Vec3);
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
+        .insert_resource(Time::<Fixed>::from_hz(30.))
+        .add_systems(FixedUpdate, (apply_velocity))
         .add_systems(
             Update,
             (
@@ -84,6 +90,7 @@ fn main() {
         )
         .add_observer(apply_grab)
         .add_message::<BallSpawn>()
+        .init_resource::<BallData>()
         .run();
 }
 
@@ -121,6 +128,7 @@ fn spawn_ball(
             Transform::from_translation(spawn.position),
             Mesh3d(ball_data.mesh()),
             MeshMaterial3d(ball_data.material()),
+            Velocity(spawn.velocity),
         ));
     }
 }
@@ -139,7 +147,14 @@ fn shoot_ball(
     }
     spawner.write(BallSpawn {
         position: player.translation,
+        velocity: player.forward().as_vec3() * 15.,
     });
+}
+
+fn apply_velocity(mut objects: Query<(&mut Transform, &Velocity)>, time: Res<Time>) {
+    for (mut transform, velocity) in &mut objects {
+        transform.translation += velocity.0 * time.delta_secs();
+    }
 }
 
 fn player_move(
