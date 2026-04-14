@@ -74,6 +74,22 @@ struct Velocity(Vec3);
 
 const GRAVITY: Vec3 = Vec3::new(0., -9.8, 0.);
 
+#[derive(Resource)]
+struct Power {
+    charging: bool,
+    current: f32,
+}
+
+#[derive(Component)]
+struct PowerBar {
+    min: f32,
+    max: f32,
+}
+
+const NO_CHARGING: Color = Color::linear_rgb(0.2, 0.2, 0.2);
+const MIN_FILL: f32 = 29.75 / 6.;
+const EMPTY_SPACE: f32 = 29.75 - MIN_FILL;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -96,11 +112,16 @@ fn main() {
                 toggle_grab.run_if(input_just_released(KeyCode::Escape)),
                 spawn_ball,
                 shoot_ball.before(spawn_ball).before(focus_event),
+                update_power_bar,
             ),
         )
         .add_observer(apply_grab)
         .add_message::<BallSpawn>()
         .init_resource::<BallData>()
+        .insert_resource(Power {
+            charging: false,
+            current: 0.,
+        })
         .run();
 }
 
@@ -153,7 +174,7 @@ fn spawn_ball(
             Transform::from_translation(spawn.position),
             Mesh3d(ball_data.mesh()),
             MeshMaterial3d(ball_data.material()),
-            Velocity(spawn.velocity * spawn.power * 10.),
+            Velocity(spawn.velocity * spawn.power * 1.),
         ));
     }
 }
@@ -163,28 +184,30 @@ fn shoot_ball(
     player: Single<&Transform, With<Player>>,
     mut spawner: MessageWriter<BallSpawn>,
     cursor: Single<&mut CursorOptions>,
-    mut power: Local<Option<f32>>,
+    mut power: ResMut<Power>,
     time: Res<Time>,
 ) {
     if cursor.visible {
         return;
     }
-    if let Some(current) = power.as_mut() {
+    if power.charging {
         if input.just_released(MouseButton::Left) {
             spawner.write(BallSpawn {
                 position: player.translation,
-                velocity: player.forward().as_vec3() * 15.,
-                power: *current,
+                velocity: player.forward().as_vec3() * 1.,
+                power: power.current,
             });
         }
         if input.pressed(MouseButton::Left) {
-            *current += time.delta_secs();
+            power.current += time.delta_secs();
+            power.current = power.current.clamp(1., 6.);
         } else {
-            *power = None
+            power.charging = false;
         }
     }
-    if !input.just_pressed(MouseButton::Left) {
-        *power = Some(0.2);
+    if input.just_pressed(MouseButton::Left) {
+        power.charging = true;
+        power.current = 0.2;
     }
 }
 
@@ -249,6 +272,47 @@ fn spawn_map(mut commands: Commands, ball_data: Res<BallData>) {
             Mesh3d(ball_data.mesh()),
             MeshMaterial3d(ball_data.materials[h].clone()),
         ));
+    }
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::VMax(30.),
+                height: Val::VMax(5.),
+                bottom: Val::Px(20.),
+                left: Val::Px(20.),
+                border_radius: BorderRadius::all(Val::VMax(5.)),
+                ..default()
+            },
+            BackgroundColor(Color::linear_rgb(0.5, 0.5, 0.5)),
+        ))
+        .with_child((
+            Node {
+                position_type: PositionType::Absolute,
+                min_width: Val::VMax(MIN_FILL),
+                height: Val::Percent(95.),
+                margin: UiRect::all(Val::VMax(0.125)),
+                border_radius: BorderRadius::all(Val::VMax(5.)),
+                ..default()
+            },
+            BackgroundColor(NO_CHARGING),
+            PowerBar { min: 1., max: 6. },
+        ));
+}
+
+fn update_power_bar(
+    mut bars: Query<(&mut Node, &PowerBar, &mut BackgroundColor)>,
+    power: Res<Power>,
+) {
+    for (mut bar, config, mut bg) in &mut bars {
+        if !power.charging {
+            bg.0 = NO_CHARGING;
+            bar.width = Val::VMax(MIN_FILL);
+        } else {
+            let percent = (power.current - config.min) / (config.max - config.min);
+            bg.0 = Color::linear_rgb(1. - percent, percent, 0.);
+            bar.width = Val::VMax(MIN_FILL + percent * EMPTY_SPACE);
+        }
     }
 }
 
